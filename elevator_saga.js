@@ -27,7 +27,7 @@
         }
         function isSpaceAvailable(elevator) {
             var num = 1;
-            var estimateAvailableNum = elevator.maxPassengerCount() * (1 - elevator.loadFactor() - 0.1);
+            var estimateAvailableNum = elevator.maxPassengerCount() * (1 - elevator.loadFactor() - 0.4);
             return estimateAvailableNum >= num;
         }
         function setStop(elevator) {
@@ -44,6 +44,16 @@
             elevator.goingDownIndicator(!isDirectionUp);
             elevator.goingUpIndicator(isDirectionUp);
         }
+        function setLightOff(elevator) {
+            console.log("light Off!" + elevator.toString());
+            elevator.goingDownIndicator(false);
+            elevator.goingUpIndicator(false);
+        }
+        function setLightOn(elevator, direction) {
+            elevator.goingDownIndicator(!direction);
+            elevator.goingUpIndicator(direction);
+        }
+
         function addDestination(elevator, destFloorNum) {
             console.log("addDestination called" + elevator + "," + destFloorNum);
             if (isStopped(elevator)) {
@@ -83,6 +93,9 @@
                 }
             }
             return false;
+        }
+        function isButtonPressedRegardlessElevator(floorNum, isUp) {
+            return buttonPressed[floorNum][isUp].onOff;
         }
         function setButtonPressed(floorNum, isUp, value) {
             console.log("setButton" + floorNum + (isUp ? "up" : "down") + value);
@@ -128,10 +141,19 @@
                 return null;
             }
         }
-        function findStoppedElevator(elevators) {
+        function findStoppedElevator(elevators, currentFloorNum) {
+            //부르는 층이 0층이 아니라면 0층에 멈춘 엘베가 한 대만 있다면 부르지 않는다
+            temp_ret = null;
             for(var i=0;i<ELEVATOR_NUM;i++) {
                 if (isStopped(elevators[i])) {
-                    return elevators[i];
+                    if(elevators[i].currentFloor() != 0 || currentFloorNum == 0) {
+                        return elevators[i];
+                    }
+                    if (temp_ret == null) {
+                        temp_ret = elevators[i];
+                    } else {
+                        return elevators[i];
+                    }
                 }
             }
             return null;
@@ -147,7 +169,7 @@
                     //idle인데 누군가 타고있다!
                     //눌린 버튼을 기준으로 방향을 설정하되 이번 층에서도 방향이 같으면 태우자!
                     console.log("something strange but keep going, became idle with passensers inside" + elevator.toString());
-                    var direction = isDestUpper(elevator, elevator.getpressedFloors()[0]);
+                    var direction = isDestUpper(elevator, elevator.getPressedFloors()[0]);
                     if (isSpaceAvailable(elevator) && isButtonPressed(nowFloorNum, direction, elevator)) {
                         setDirection(elevator, direction);
                         addDestination(elevator, nowFloorNum);
@@ -160,6 +182,16 @@
                     return;
                 }
                 //엘베가 비었다! 행동을 결정하자
+                //0. 현재 층에 탈 사람이 있으면 무조건 태운다.
+                if (isButtonPressedRegardlessElevator(nowFloorNum, oldDirection)) {
+                    setDirection(elevator, oldDirection);
+                    addDestination(elevator, nowFloorNum);
+                    return;
+                } else if(isButtonPressedRegardlessElevator(nowFloorNum, !oldDirection)) {
+                    setDirection(elevator, !oldDirection);
+                    addDestination(elevator, nowFloorNum);
+                    return;
+                }
                 //1. 가던 방향으로 쭉 간다
                 //1-1. 가던 방향의 층에 있는 사람들 중 가던 방향으로 가려는 가장 가까운 사람을 태운다.
                 var destFloorNum = findClosestFloorNumWithButtonPressed(nowFloorNum, oldDirection, oldDirection, elevator);
@@ -230,6 +262,7 @@
                     console.log("passing_floor" + floorNum + directionString +elevator.toString());
                 }
                 var direction = directionString == "up";
+                setLightOn(elevator, direction);
                 if (isSpaceAvailable(elevator) && isButtonPressed(floorNum, direction, elevator)) {
                     addDestination(elevator, floorNum);
                 }
@@ -238,14 +271,18 @@
                 if(DEBUG_MODE) {
                     console.log("stopped_at_floor" + floorNum + elevator.toString());
                 }
-                var direction = isGoingUp(elevator);
-                setButtonPressed(floorNum, direction, false);
+                if(!isSpaceAvailable(elevator)) {
+                     setLightOff(elevator);
+                } else {
+                    var direction = isGoingUp(elevator);
+                    setButtonPressed(floorNum, direction, false);
+                }
             })
         }
         function registerFloorEvent(floor) {
             floor.on("up_button_pressed", function() {
                 console.log("up_button pressed called" + floor.floorNum());
-                var elevator = findStoppedElevator(elevators);
+                var elevator = findStoppedElevator(elevators, floor.floorNum());
                 setButtonPressed(floor.floorNum(), true, true);
                 if(elevator == null) {
                     return;
@@ -260,7 +297,7 @@
 
             floor.on("down_button_pressed", function() {
                 console.log("down_button pressed called" + floor.floorNum());
-                var elevator = findStoppedElevator(elevators);
+                var elevator = findStoppedElevator(elevators, floor.floorNum());
                 setButtonPressed(floor.floorNum(), false, true);
                 if(elevator == null) {
                     return;
